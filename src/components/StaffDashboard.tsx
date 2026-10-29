@@ -21,6 +21,7 @@ import {
   HelpCircle,
   Pencil,
   Trash2,
+  Database,
 } from 'lucide-react';
 import type { Booking, StaffUser, ActivityLog, Therapist } from '../types.ts';
 
@@ -94,8 +95,52 @@ export const StaffDashboard: React.FC = () => {
   const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Check existing session on mount
+  // Database Connection Status & MySQL Sync State
+  const [dbStatus, setDbStatus] = useState<any>(null);
+  const [syncingDb, setSyncingDb] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+
+  const fetchDbStatus = async () => {
+    try {
+      const res = await fetch('/api/db/status');
+      const data = await res.json();
+      if (data.success) {
+        setDbStatus(data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch DB status', err);
+    }
+  };
+
+  const handleSyncFromMysql = async () => {
+    setSyncingDb(true);
+    setSyncMessage(null);
+    try {
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      const headers: Record<string, string> = {};
+      if (token) headers['x-session-id'] = token;
+      const res = await fetch('/api/db/sync', {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncMessage(data.message || 'Synced successfully!');
+        loadBookings();
+        fetchDbStatus();
+      } else {
+        setSyncMessage(`Sync notice: ${data.message || data.error}`);
+      }
+    } catch (err: any) {
+      setSyncMessage(`Sync failed: ${err.message}`);
+    } finally {
+      setSyncingDb(false);
+    }
+  };
+
+  // Check existing session & DB status on mount
   useEffect(() => {
+    fetchDbStatus();
     async function verifySession() {
       try {
         const token = localStorage.getItem('vibes_session_token') || '';
@@ -599,6 +644,100 @@ export const StaffDashboard: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Database Connection & MySQL Persistence Status Banner */}
+      {dbStatus && (
+        <div
+          className={`rounded-2xl p-4 border transition-all text-xs shadow-xs ${
+            dbStatus.connected
+              ? 'bg-emerald-50/90 border-emerald-200 text-emerald-950'
+              : dbStatus.mysqlConfigured
+              ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+              : 'bg-stone-100 border-stone-200 text-stone-800'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5">
+                {dbStatus.connected ? (
+                  <div className="relative flex items-center justify-center w-3 h-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+                  </div>
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-sm">
+                    {dbStatus.connected
+                      ? 'MySQL Database Connected (Permanent Storage)'
+                      : dbStatus.mysqlConfigured
+                      ? 'MySQL Connection Offline / Tunnel Paused'
+                      : 'Local Storage Mode (Render Ephemeral Storage)'}
+                  </span>
+                  {dbStatus.connected && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-200/70 text-emerald-800 font-semibold text-[10px]">
+                      Live Sync Active
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-0.5 text-stone-600 leading-relaxed text-[11px]">
+                  {dbStatus.connected ? (
+                    <>
+                      Connected to <strong className="font-mono text-emerald-900">{dbStatus.config?.database}</strong> at{' '}
+                      <span className="font-mono bg-white/80 px-1.5 py-0.5 rounded border border-emerald-200 text-emerald-950">
+                        {dbStatus.config?.host}:{dbStatus.config?.port}
+                      </span>
+                      . Every appointment is permanently saved to your MySQL database and survives Render reloads.
+                    </>
+                  ) : dbStatus.mysqlConfigured ? (
+                    <>
+                      Could not reach MySQL at <span className="font-mono">{dbStatus.config?.host}:{dbStatus.config?.port}</span>. Make sure your <strong className="text-amber-900">ngrok</strong> command (<code className="font-mono bg-white px-1 py-0.5 rounded">ngrok tcp 3306</code>) and XAMPP MySQL are running on your computer.
+                    </>
+                  ) : (
+                    <>
+                      Render free hosting resets local storage on restart/reload. To save all appointments permanently to your computer's <strong>XAMPP MySQL database</strong>, run <code className="font-mono bg-white px-1 py-0.5 rounded">ngrok tcp 3306</code> and set <code className="font-mono bg-white px-1 py-0.5 rounded">MYSQL_HOST</code> in Render Environment.
+                    </>
+                  )}
+                </p>
+
+                {syncMessage && (
+                  <div className="mt-2 text-xs font-medium text-emerald-800 bg-white/90 px-2.5 py-1 rounded-lg border border-emerald-200 inline-block">
+                    {syncMessage}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {dbStatus.connected ? (
+                <button
+                  type="button"
+                  onClick={handleSyncFromMysql}
+                  disabled={syncingDb}
+                  className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${syncingDb ? 'animate-spin' : ''}`} />
+                  {syncingDb ? 'Syncing...' : 'Sync with MySQL'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={fetchDbStatus}
+                  className="px-3 py-1.5 bg-stone-800 hover:bg-stone-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Check MySQL Status
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Summary Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
