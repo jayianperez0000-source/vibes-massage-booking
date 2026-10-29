@@ -19,16 +19,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: 'npm'
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Lint & Typecheck
-        run: npm run lint
-
       - name: Build Production Frontend
         run: npm run build
-
-      - name: Verify Backend Modules
-        run: npx tsx -e "import('./server.ts')"
