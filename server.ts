@@ -1,9 +1,11 @@
+import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { initDatabase } from './server/db.ts';
+import { initMysql } from './server/mysql.ts';
 import { apiRouter } from './server/routes.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +16,11 @@ const PORT = Number(process.env.PORT) || 3000;
 
 // Initialize database schema and seeds
 initDatabase();
+
+// Connect to MySQL if credentials provided (e.g. XAMPP via ngrok or cloud MySQL)
+initMysql().catch((err) => {
+  console.warn('[MySQL] Background startup initialization notice:', err?.message || err);
+});
 
 // Middleware
 app.use(express.json({ limit: '1mb' }));
