@@ -782,9 +782,9 @@ apiRouter.get('/staff/bookings', requireStaffAuth, (req: Request, res: Response)
     // Summary statistics for dashboard cards
     const totalRow = db.prepare('SELECT COUNT(*) as count FROM bookings').get() as { count: number };
     const todayStr = new Date().toISOString().split('T')[0];
-    const todayRow = db.prepare('SELECT COUNT(*) as count FROM bookings WHERE booking_date = ? AND status != "Cancelled"').get(todayStr) as { count: number };
-    const pendingRow = db.prepare('SELECT COUNT(*) as count FROM bookings WHERE status = "Pending"').get() as { count: number };
-    const completedRow = db.prepare('SELECT COUNT(*) as count FROM bookings WHERE status = "Completed"').get() as { count: number };
+    const todayRow = db.prepare("SELECT COUNT(*) as count FROM bookings WHERE booking_date = ? AND status != 'Cancelled'").get(todayStr) as { count: number };
+    const pendingRow = db.prepare("SELECT COUNT(*) as count FROM bookings WHERE status = 'Pending'").get() as { count: number };
+    const completedRow = db.prepare("SELECT COUNT(*) as count FROM bookings WHERE status = 'Completed'").get() as { count: number };
 
     res.json({
       success: true,
