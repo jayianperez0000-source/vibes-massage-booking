@@ -1,0 +1,34 @@
+name: Vibes Massage CI/CD Build & Verification
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    name: Build & Verify Application
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Lint & Typecheck
+        run: npm run lint
+
+      - name: Build Production Frontend
+        run: npm run build
+
+      - name: Verify Backend Modules
+        run: npx tsx -e "import('./server.ts')"
