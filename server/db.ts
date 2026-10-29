@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import fs from 'node:fs';
-import { hashPassword } from './security.js';
+import { hashPassword } from './security.ts';
 
 const DB_FILE = path.resolve(process.cwd(), 'vibes_massage.db');
 
