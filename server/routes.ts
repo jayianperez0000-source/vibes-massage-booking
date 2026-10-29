@@ -843,6 +843,141 @@ apiRouter.patch('/staff/bookings/:id/status', requireStaffAuth, (req: Request, r
   });
 });
 
+// Edit complete booking details
+apiRouter.put('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Response) => {
+  const staff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const bookingId = Number(req.params.id);
+
+  const existing = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId) as any;
+  if (!existing) {
+    return res.status(404).json({ success: false, error: 'Booking record not found.' });
+  }
+
+  const {
+    customer_name,
+    contact_number,
+    service_id,
+    oil_option,
+    therapist_id,
+    booking_date,
+    start_time,
+    status,
+    notes,
+  } = req.body;
+
+  if (!customer_name || String(customer_name).trim().length < 2) {
+    return res.status(400).json({ success: false, error: 'Customer name is required.' });
+  }
+
+  const cleanPhone = String(contact_number || '').trim().replace(/[\s-]/g, '');
+  if (cleanPhone.length < 7) {
+    return res.status(400).json({ success: false, error: 'Valid contact number is required.' });
+  }
+
+  const svc = db.prepare('SELECT * FROM services WHERE id = ?').get(service_id || existing.service_id) as any;
+  const serviceName = svc ? svc.name : existing.service_name;
+  const duration = svc ? svc.duration_minutes : existing.duration_minutes;
+
+  const targetDate = booking_date || existing.booking_date;
+  const targetStartTime = start_time || existing.start_time;
+  const targetTherapistId = Number(therapist_id || existing.therapist_id);
+
+  // Calculate end time
+  const [sh, sm] = targetStartTime.split(':').map(Number);
+  const endMins = sh * 60 + sm + duration;
+  const targetEndTime = `${String(Math.floor(endMins / 60)).padStart(2, '0')}:${String(endMins % 60).padStart(2, '0')}`;
+
+  // Overlap conflict check (excluding this current booking id)
+  const overlap = db.prepare(`
+    SELECT id FROM bookings
+    WHERE therapist_id = ?
+      AND booking_date = ?
+      AND id != ?
+      AND status != 'Cancelled'
+      AND NOT (? >= end_time OR ? <= start_time)
+  `).get(targetTherapistId, targetDate, bookingId, targetStartTime, targetEndTime);
+
+  if (overlap) {
+    return res.status(409).json({ success: false, error: 'Therapist is already booked for this time slot.' });
+  }
+
+  const safeOil = oil_option === 'Dry' ? 'Dry' : 'With Oil';
+  const safeStatus = ['Pending', 'Confirmed', 'Completed', 'Cancelled'].includes(status) ? status : existing.status;
+  const nowIso = new Date().toISOString();
+
+  db.prepare(`
+    UPDATE bookings
+    SET customer_name = ?,
+        contact_number = ?,
+        service_id = ?,
+        service_name = ?,
+        oil_option = ?,
+        therapist_id = ?,
+        booking_date = ?,
+        start_time = ?,
+        end_time = ?,
+        duration_minutes = ?,
+        status = ?,
+        notes = ?,
+        updated_at = ?
+    WHERE id = ?
+  `).run(
+    String(customer_name).trim().slice(0, 100),
+    cleanPhone,
+    svc ? svc.id : existing.service_id,
+    serviceName,
+    safeOil,
+    targetTherapistId,
+    targetDate,
+    targetStartTime,
+    targetEndTime,
+    duration,
+    safeStatus,
+    notes ? String(notes).trim().slice(0, 300) : '',
+    nowIso,
+    bookingId
+  );
+
+  logActivity(
+    staff.username,
+    'STAFF_EDIT_BOOKING',
+    `Updated booking ${existing.reference_no} for ${customer_name}`,
+    ip
+  );
+
+  res.json({
+    success: true,
+    message: `Booking ${existing.reference_no} updated successfully.`,
+  });
+});
+
+// Delete booking record permanently
+apiRouter.delete('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Response) => {
+  const staff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const bookingId = Number(req.params.id);
+
+  const existing = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId) as any;
+  if (!existing) {
+    return res.status(404).json({ success: false, error: 'Booking record not found.' });
+  }
+
+  db.prepare('DELETE FROM bookings WHERE id = ?').run(bookingId);
+
+  logActivity(
+    staff.username,
+    'STAFF_DELETE_BOOKING',
+    `Deleted booking ${existing.reference_no} (${existing.customer_name}, ${existing.booking_date} ${existing.start_time})`,
+    ip
+  );
+
+  res.json({
+    success: true,
+    message: `Booking ${existing.reference_no} has been permanently deleted.`,
+  });
+});
+
 // ==========================================
 // 10. XML Export for Staff (Section 5.2 & Table I)
 // ==========================================
