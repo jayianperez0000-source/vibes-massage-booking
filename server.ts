@@ -58,3 +58,16 @@ async function setupVite() {
     console.log(`[Vibes Massage] Server listening on http://0.0.0.0:${PORT}`);
   });
 }
+
+process.on('uncaughtException', (err) => {
+  console.error('[Vibes Massage] Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Vibes Massage] Unhandled Rejection:', reason);
+});
+
+setupVite().catch((err) => {
+  console.error('[Vibes Massage] Failed to start server:', err);
+  process.exit(1);
+});
