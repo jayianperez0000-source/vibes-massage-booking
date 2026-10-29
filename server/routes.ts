@@ -3,6 +3,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { db } from './db.ts';
 import {
+  saveBookingToMysql,
+  updateBookingInMysql,
+  deleteBookingFromMysql,
+  getDatabaseStatus,
+  syncFromMysql,
+} from './mysql.ts';
+import {
   hashPassword,
   verifyPassword,
   escapeHtml,
@@ -363,6 +370,25 @@ apiRouter.post('/bookings', (req: Request, res: Response) => {
       safeNotes
     );
 
+    // Persist immediately to MySQL (XAMPP or remote)
+    saveBookingToMysql({
+      reference_no: referenceNo,
+      customer_name: trimmedName,
+      contact_number: trimmedContact,
+      service_id: service.id,
+      service_name: service.name,
+      oil_option: safeOilOption,
+      therapist_id: chosenTherapistId,
+      booking_date: date,
+      start_time,
+      end_time: endTime,
+      duration_minutes: duration,
+      status: 'Pending',
+      created_at: nowIso,
+      updated_at: nowIso,
+      notes: safeNotes,
+    }).catch((e) => console.error('[MySQL] async save error:', e));
+
     logActivity(
       trimmedName,
       'BOOKING_CREATED',
@@ -551,6 +577,15 @@ apiRouter.post('/bookings/reschedule', (req: Request, res: Response) => {
       WHERE id = ?
     `).run(new_date, new_time, endTime, tid, nowIso, booking.id);
 
+    updateBookingInMysql({
+      reference_no: booking.reference_no,
+      booking_date: new_date,
+      start_time: new_time,
+      end_time: endTime,
+      therapist_id: tid,
+      updated_at: nowIso,
+    }).catch((e) => console.error('[MySQL] async reschedule error:', e));
+
     logActivity(
       booking.customer_name,
       'BOOKING_RESCHEDULED',
@@ -604,6 +639,13 @@ apiRouter.post('/bookings/cancel', (req: Request, res: Response) => {
       SET status = 'Cancelled', cancellation_reason = ?, updated_at = ?
       WHERE id = ?
     `).run(reason, nowIso, booking.id);
+
+    updateBookingInMysql({
+      reference_no: booking.reference_no,
+      status: 'Cancelled',
+      cancellation_reason: reason,
+      updated_at: nowIso,
+    }).catch((e) => console.error('[MySQL] async cancel error:', e));
 
     logActivity(
       booking.customer_name,
@@ -829,6 +871,15 @@ apiRouter.patch('/staff/bookings/:id/status', requireStaffAuth, (req: Request, r
     WHERE id = ?
   `).run(status, safeReason, safeNotes, nowIso, bookingId);
 
+  // Sync to MySQL in real-time
+  updateBookingInMysql({
+    reference_no: existing.reference_no,
+    status,
+    cancellation_reason: safeReason,
+    notes: safeNotes,
+    updated_at: nowIso,
+  }).catch((e) => console.error('[MySQL] async status update error:', e));
+
   logActivity(
     staff.username,
     'UPDATE_BOOKING_STATUS',
@@ -905,6 +956,8 @@ apiRouter.put('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Respo
   const safeOil = oil_option === 'Dry' ? 'Dry' : 'With Oil';
   const safeStatus = ['Pending', 'Confirmed', 'Completed', 'Cancelled'].includes(status) ? status : existing.status;
   const nowIso = new Date().toISOString();
+  const trimmedName = String(customer_name).trim().slice(0, 100);
+  const safeNotes = notes ? String(notes).trim().slice(0, 300) : '';
 
   db.prepare(`
     UPDATE bookings
@@ -923,7 +976,7 @@ apiRouter.put('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Respo
         updated_at = ?
     WHERE id = ?
   `).run(
-    String(customer_name).trim().slice(0, 100),
+    trimmedName,
     cleanPhone,
     svc ? svc.id : existing.service_id,
     serviceName,
@@ -934,10 +987,28 @@ apiRouter.put('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Respo
     targetEndTime,
     duration,
     safeStatus,
-    notes ? String(notes).trim().slice(0, 300) : '',
+    safeNotes,
     nowIso,
     bookingId
   );
+
+  // Sync edit to MySQL in real-time
+  updateBookingInMysql({
+    reference_no: existing.reference_no,
+    customer_name: trimmedName,
+    contact_number: cleanPhone,
+    service_id: svc ? svc.id : existing.service_id,
+    service_name: serviceName,
+    oil_option: safeOil,
+    therapist_id: targetTherapistId,
+    booking_date: targetDate,
+    start_time: targetStartTime,
+    end_time: targetEndTime,
+    duration_minutes: duration,
+    status: safeStatus,
+    notes: safeNotes,
+    updated_at: nowIso,
+  }).catch((e) => console.error('[MySQL] async edit error:', e));
 
   logActivity(
     staff.username,
@@ -964,6 +1035,9 @@ apiRouter.delete('/staff/bookings/:id', requireStaffAuth, (req: Request, res: Re
   }
 
   db.prepare('DELETE FROM bookings WHERE id = ?').run(bookingId);
+
+  // Delete from MySQL in real-time
+  deleteBookingFromMysql(existing.reference_no).catch((e) => console.error('[MySQL] async delete error:', e));
 
   logActivity(
     staff.username,
@@ -1156,4 +1230,33 @@ apiRouter.get('/download/php-bundle', (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to download PHP bundle.' });
   }
 });
+
+// ==========================================
+// Database Health & MySQL Live Sync Endpoints
+// ==========================================
+apiRouter.get('/db/status', async (req: Request, res: Response) => {
+  try {
+    const status = await getDatabaseStatus();
+    res.json({ success: true, ...status });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Error checking DB status' });
+  }
+});
+
+apiRouter.post('/db/sync', requireStaffAuth, async (req: Request, res: Response) => {
+  try {
+    const result = await syncFromMysql();
+    res.json({
+      success: result.success,
+      message: result.success
+        ? `Successfully synchronized ${result.count} booking records from MySQL!`
+        : `Sync failed: ${result.error}`,
+      count: result.count,
+      error: result.error,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message || 'Failed to sync with MySQL' });
+  }
+});
+
 
