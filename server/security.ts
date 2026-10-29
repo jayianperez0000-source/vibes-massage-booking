@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
 import { db } from './db.ts';
+import { logActivityToMysql } from './mysql.ts';
 
 // ==========================================
 // 1. Password Hashing (Equivalent to PHP password_hash / password_verify)
@@ -308,6 +309,8 @@ export function logActivity(actor: string, action: string, details: string, ip: 
       INSERT INTO activity_logs (timestamp, actor, action, details, ip_address)
       VALUES (?, ?, ?, ?, ?)
     `).run(timestamp, actor, action, details, ip);
+
+    logActivityToMysql(actor, action, details, ip).catch(() => {});
   } catch (err) {
     console.error('Failed to write activity log:', err);
   }
