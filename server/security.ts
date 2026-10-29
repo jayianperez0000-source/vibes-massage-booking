@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request, Response, NextFunction } from 'express';
-import { db } from './db.js';
+import { db } from './db.ts';
 
 // ==========================================
 // 1. Password Hashing (Equivalent to PHP password_hash / password_verify)
