@@ -33,29 +33,27 @@ app.use('/api', apiRouter);
 
 // Set up Vite development server middleware or production static files
 async function setupVite() {
-  const isProd = process.env.NODE_ENV === 'production';
+  const distPath = path.resolve(__dirname, 'dist');
+  const hasDist = fs.existsSync(distPath) && fs.existsSync(path.resolve(distPath, 'index.html'));
+  const isProd = process.env.NODE_ENV === 'production' || hasDist;
 
-  if (!isProd) {
+  if (isProd && hasDist) {
+    console.log('[Vibes Massage] Serving compiled production build from dist/');
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
+  } else {
+    console.log('[Vibes Massage] Starting Vite dev middleware');
     const { createServer } = await import('vite');
     const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
-    const distPath = path.resolve(__dirname, 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
-      res.sendFile(path.resolve(distPath, 'index.html'));
-    });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Vibes Massage] Server listening on http://0.0.0.0:${PORT}`);
   });
 }
-
-setupVite().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
