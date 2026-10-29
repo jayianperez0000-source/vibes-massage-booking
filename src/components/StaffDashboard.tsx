@@ -19,6 +19,8 @@ import {
   ShieldCheck,
   Check,
   HelpCircle,
+  Pencil,
+  Trash2,
 } from 'lucide-react';
 import type { Booking, StaffUser, ActivityLog, Therapist } from '../types.ts';
 
@@ -72,6 +74,25 @@ export const StaffDashboard: React.FC = () => {
 
   // Status Update State
   const [updatingId, setUpdatingId] = useState<number | null>(null);
+
+  // Edit & Delete State
+  const [editingBooking, setEditingBooking] = useState<Booking | null>(null);
+  const [editFormData, setEditFormData] = useState({
+    customer_name: '',
+    contact_number: '',
+    service_id: 'whole-body',
+    oil_option: 'With Oil' as 'With Oil' | 'Dry',
+    therapist_id: 1,
+    booking_date: '',
+    start_time: '',
+    status: 'Pending',
+    notes: '',
+  });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [deletingBooking, setDeletingBooking] = useState<Booking | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Check existing session on mount
   useEffect(() => {
@@ -239,6 +260,78 @@ export const StaffDashboard: React.FC = () => {
       console.error('Status change error:', err);
     } finally {
       setUpdatingId(null);
+    }
+  };
+
+  const startEditing = (b: Booking) => {
+    setEditingBooking(b);
+    setEditFormData({
+      customer_name: b.customer_name,
+      contact_number: b.contact_number,
+      service_id: b.service_id,
+      oil_option: b.oil_option,
+      therapist_id: b.therapist_id,
+      booking_date: b.booking_date,
+      start_time: b.start_time,
+      status: b.status,
+      notes: b.notes || '',
+    });
+    setEditError(null);
+  };
+
+  const handleSaveEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBooking) return;
+    setSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      const res = await fetch(`/api/staff/bookings/${editingBooking.id}`, {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Session-ID': token } : {}),
+        },
+        body: JSON.stringify(editFormData),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEditingBooking(null);
+        loadBookings();
+      } else {
+        setEditError(data.error || 'Failed to update booking.');
+      }
+    } catch (err) {
+      setEditError('Network error while saving changes.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingBooking) return;
+    setIsDeleting(true);
+    try {
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      const res = await fetch(`/api/staff/bookings/${deletingBooking.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: token ? { 'X-Session-ID': token } : {},
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setDeletingBooking(null);
+        loadBookings();
+      } else {
+        alert(data.error || 'Failed to delete booking.');
+      }
+    } catch (err) {
+      alert('Network error while deleting booking.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -645,7 +738,7 @@ export const StaffDashboard: React.FC = () => {
                   <th className="py-3 px-4">Service</th>
                   <th className="py-3 px-4">Therapist</th>
                   <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4 text-right">Update Status</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
@@ -695,12 +788,14 @@ export const StaffDashboard: React.FC = () => {
                     </td>
 
                     <td className="py-3 px-4 text-right whitespace-nowrap">
-                      <div className="inline-flex items-center gap-1">
+                      <div className="inline-flex items-center gap-1.5">
+                        {/* Quick Status Buttons */}
                         {b.status === 'Pending' && (
                           <button
                             onClick={() => handleStatusChange(b.id, 'Confirmed')}
                             disabled={updatingId === b.id}
                             className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] shadow-sm transition-all"
+                            title="Confirm appointment"
                           >
                             Confirm
                           </button>
@@ -711,6 +806,7 @@ export const StaffDashboard: React.FC = () => {
                             onClick={() => handleStatusChange(b.id, 'Completed')}
                             disabled={updatingId === b.id}
                             className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] shadow-sm transition-all"
+                            title="Mark as completed"
                           >
                             Complete
                           </button>
@@ -720,11 +816,32 @@ export const StaffDashboard: React.FC = () => {
                           <button
                             onClick={() => handleStatusChange(b.id, 'Cancelled')}
                             disabled={updatingId === b.id}
-                            className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-rose-50 text-rose-700 border border-stone-200 font-semibold text-[11px] transition-all"
+                            className="px-2 py-1 rounded-lg bg-stone-100 hover:bg-rose-50 text-stone-600 hover:text-rose-700 border border-stone-200 text-[11px] transition-all"
+                            title="Cancel appointment"
                           >
                             Cancel
                           </button>
                         )}
+
+                        {/* Edit Button */}
+                        <button
+                          type="button"
+                          onClick={() => startEditing(b)}
+                          className="p-1.5 rounded-lg bg-stone-100 hover:bg-emerald-50 text-stone-600 hover:text-emerald-700 border border-stone-200 transition-all shadow-sm"
+                          title="Edit booking details"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Delete Button */}
+                        <button
+                          type="button"
+                          onClick={() => setDeletingBooking(b)}
+                          className="p-1.5 rounded-lg bg-stone-100 hover:bg-rose-50 text-stone-400 hover:text-rose-600 border border-stone-200 transition-all shadow-sm"
+                          title="Delete booking permanently"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -904,6 +1021,224 @@ export const StaffDashboard: React.FC = () => {
                   </div>
                 ))
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Booking Modal */}
+      {editingBooking && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
+              <div>
+                <h3 className="font-serif font-bold text-stone-900 text-lg">
+                  Edit Appointment
+                </h3>
+                <p className="text-xs text-stone-500 font-mono mt-0.5">
+                  Reference: {editingBooking.reference_no}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingBooking(null)}
+                className="p-1 rounded-lg text-stone-400 hover:text-stone-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {editError && (
+              <div className="p-3 mb-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {editError}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveEdit} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Customer Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.customer_name}
+                    onChange={(e) => setEditFormData({ ...editFormData, customer_name: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Contact Number *</label>
+                  <input
+                    type="tel"
+                    required
+                    value={editFormData.contact_number}
+                    onChange={(e) => setEditFormData({ ...editFormData, contact_number: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Service</label>
+                  <select
+                    value={editFormData.service_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, service_id: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  >
+                    <option value="whole-body">Whole Body Massage (60m - ₱350)</option>
+                    <option value="body-parts">Body Parts Massage (30m - ₱200)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Medium Preference</label>
+                  <select
+                    value={editFormData.oil_option}
+                    onChange={(e) => setEditFormData({ ...editFormData, oil_option: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  >
+                    <option value="With Oil">With Oil</option>
+                    <option value="Dry">Dry (Acupressure)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Assigned Therapist</label>
+                  <select
+                    value={editFormData.therapist_id}
+                    onChange={(e) => setEditFormData({ ...editFormData, therapist_id: Number(e.target.value) })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  >
+                    {therapists.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} ({t.specialization})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Status</label>
+                  <select
+                    value={editFormData.status}
+                    onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900 font-bold"
+                  >
+                    <option value="Pending">Pending</option>
+                    <option value="Confirmed">Confirmed</option>
+                    <option value="Completed">Completed</option>
+                    <option value="Cancelled">Cancelled</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={editFormData.booking_date}
+                    onChange={(e) => setEditFormData({ ...editFormData, booking_date: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-stone-700 mb-1">Start Time (HH:MM)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. 14:00"
+                    pattern="^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$"
+                    value={editFormData.start_time}
+                    onChange={(e) => setEditFormData({ ...editFormData, start_time: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-stone-700 mb-1">Special Notes / Requests</label>
+                <textarea
+                  rows={2}
+                  value={editFormData.notes}
+                  onChange={(e) => setEditFormData({ ...editFormData, notes: e.target.value })}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-xl focus:ring-2 focus:ring-emerald-500 text-stone-900"
+                  placeholder="e.g. Preferred focus areas, allergies, remarks"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => setEditingBooking(null)}
+                  className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEdit}
+                  className="px-5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold shadow-sm transition-all flex items-center gap-1.5"
+                >
+                  {savingEdit ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deletingBooking && (
+        <div className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-stone-200">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-full bg-rose-100 text-rose-700">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-serif font-bold text-stone-900 text-base">
+                  Delete Appointment Record
+                </h3>
+                <p className="text-xs text-stone-500 font-mono">
+                  {deletingBooking.reference_no}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-xs text-stone-600 leading-relaxed mb-4">
+              Are you sure you want to permanently delete the booking for{' '}
+              <strong className="text-stone-900">{deletingBooking.customer_name}</strong> on{' '}
+              <span className="font-semibold">{deletingBooking.booking_date} ({deletingBooking.start_time} - {deletingBooking.end_time})</span>?
+            </p>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-[11px] text-amber-800 mb-5">
+              ⚠️ This action is permanent and will remove the record from both customer lookup and staff reporting.
+            </div>
+
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeletingBooking(null)}
+                className="px-4 py-2 rounded-xl border border-stone-200 text-stone-600 hover:bg-stone-50 font-semibold text-xs"
+              >
+                Keep Record
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={isDeleting}
+                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-sm transition-all"
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Permanently'}
+              </button>
             </div>
           </div>
         </div>
