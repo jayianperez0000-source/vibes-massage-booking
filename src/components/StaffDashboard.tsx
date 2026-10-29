@@ -77,11 +77,18 @@ export const StaffDashboard: React.FC = () => {
   useEffect(() => {
     async function verifySession() {
       try {
-        const res = await fetch('/api/auth/session');
+        const token = localStorage.getItem('vibes_session_token') || '';
+        const res = await fetch('/api/auth/session', {
+          credentials: 'include',
+          headers: token ? { 'X-Session-ID': token } : {},
+        });
         const data = await res.json();
         if (data.authenticated && data.user) {
           setSessionUser(data.user);
           setSessionRemainingMs(data.remainingMs || 15 * 60 * 1000);
+          if (token) setSessionToken(token);
+        } else {
+          localStorage.removeItem('vibes_session_token');
         }
       } catch (err) {
         console.error('Session verify failed:', err);
@@ -99,7 +106,6 @@ export const StaffDashboard: React.FC = () => {
     const interval = setInterval(() => {
       setSessionRemainingMs((prev) => {
         if (prev <= 1000) {
-          // Auto logout when session timer hits zero
           handleLogout();
           return 0;
         }
@@ -135,8 +141,13 @@ export const StaffDashboard: React.FC = () => {
       if (therapistFilter !== 'all') params.append('therapist_id', therapistFilter);
       if (searchQuery.trim()) params.append('search', searchQuery.trim());
 
-      const res = await fetch(`/api/staff/bookings?${params.toString()}`);
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      const res = await fetch(`/api/staff/bookings?${params.toString()}`, {
+        credentials: 'include',
+        headers: token ? { 'X-Session-ID': token } : {},
+      });
       if (res.status === 401) {
+        localStorage.removeItem('vibes_session_token');
         setSessionUser(null);
         return;
       }
@@ -160,6 +171,7 @@ export const StaffDashboard: React.FC = () => {
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
@@ -169,6 +181,7 @@ export const StaffDashboard: React.FC = () => {
       if (res.ok && data.success) {
         setSessionUser(data.user);
         setSessionToken(data.sessionToken);
+        localStorage.setItem('vibes_session_token', data.sessionToken);
         setSessionRemainingMs(data.expiresInMs || 15 * 60 * 1000);
         setUsername('');
         setPassword('');
@@ -187,10 +200,16 @@ export const StaffDashboard: React.FC = () => {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+        headers: token ? { 'X-Session-ID': token } : {},
+      });
     } catch (err) {
       // ignore
     } finally {
+      localStorage.removeItem('vibes_session_token');
       setSessionUser(null);
       setSessionToken(null);
     }
@@ -199,9 +218,14 @@ export const StaffDashboard: React.FC = () => {
   const handleStatusChange = async (bookingId: number, newStatus: string) => {
     setUpdatingId(bookingId);
     try {
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
       const res = await fetch(`/api/staff/bookings/${bookingId}/status`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Session-ID': token } : {}),
+        },
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -226,8 +250,13 @@ export const StaffDashboard: React.FC = () => {
   const handlePreviewXml = async () => {
     setExportLoading(true);
     try {
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
       const res = await fetch(
-        `/api/staff/export-xml?start_date=${exportStartDate}&end_date=${exportEndDate}`
+        `/api/staff/export-xml?start_date=${exportStartDate}&end_date=${exportEndDate}`,
+        {
+          credentials: 'include',
+          headers: token ? { 'X-Session-ID': token } : {},
+        }
       );
       const text = await res.text();
       setXmlPreview(text);
@@ -235,7 +264,11 @@ export const StaffDashboard: React.FC = () => {
       // Also run safe XML parser test to confirm XXE protection
       const testRes = await fetch('/api/staff/test-xml-inspection', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'X-Session-ID': token } : {}),
+        },
         body: JSON.stringify({ xmlContent: text }),
       });
       const testData = await testRes.json();
@@ -250,7 +283,11 @@ export const StaffDashboard: React.FC = () => {
   const loadActivityLogs = async () => {
     setLoadingLogs(true);
     try {
-      const res = await fetch('/api/staff/activity-logs');
+      const token = sessionToken || localStorage.getItem('vibes_session_token') || '';
+      const res = await fetch('/api/staff/activity-logs', {
+        credentials: 'include',
+        headers: token ? { 'X-Session-ID': token } : {},
+      });
       const data = await res.json();
       if (data.success) {
         setLogs(data.logs || []);
