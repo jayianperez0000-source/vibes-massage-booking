@@ -2,14 +2,14 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { initDatabase } from './server/db.js';
-import { apiRouter } from './server/routes.js';
+import { initDatabase } from './server/db.ts';
+import { apiRouter } from './server/routes.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 
 // Initialize database schema and seeds
 initDatabase();
