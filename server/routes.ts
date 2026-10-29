@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db } from './db.js';
+import { db } from './db.ts';
 import {
   hashPassword,
   verifyPassword,
@@ -18,7 +18,7 @@ import {
   generateBookingsXml,
   safelyParseXmlForInspection,
   logActivity,
-} from './security.js';
+} from './security.ts';
 
 export const apiRouter = Router();
 
