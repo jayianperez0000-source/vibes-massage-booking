@@ -69,11 +69,105 @@ if ($method === 'GET') {
     exit;
 }
 
-if ($method === 'PATCH' || $method === 'POST') {
+if ($method === 'PATCH' || $method === 'POST' || $method === 'PUT' || $method === 'DELETE') {
     $raw = file_get_contents('php://input');
     $data = json_decode($raw, true) ?: $_POST;
+    $action = $data['action'] ?? ($method === 'DELETE' ? 'delete' : ($method === 'PUT' ? 'edit' : 'status'));
 
-    $booking_id = (int)($data['id'] ?? 0);
+    $booking_id = (int)($data['id'] ?? $_GET['id'] ?? 0);
+
+    // 1. DELETE ACTION
+    if ($action === 'delete' || $method === 'DELETE') {
+        $stmt = $pdo->prepare("SELECT * FROM bookings WHERE id = ?");
+        $stmt->execute([$booking_id]);
+        $existing = $stmt->fetch();
+        if (!$existing) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'Booking not found.']);
+            exit;
+        }
+
+        $del = $pdo->prepare("DELETE FROM bookings WHERE id = ?");
+        $del->execute([$booking_id]);
+
+        log_activity(
+            $_SESSION['staff_user']['username'],
+            'STAFF_DELETE_BOOKING',
+            "Deleted booking {$existing['reference_no']} for {$existing['customer_name']}"
+        );
+
+        echo json_encode(['success' => true, 'message' => "Booking {$existing['reference_no']} permanently deleted."]);
+        exit;
+    }
+
+    // 2. EDIT ACTION
+    if ($action === 'edit' || $method === 'PUT') {
+        $name = trim($data['customer_name'] ?? '');
+        $contact = preg_replace('/[\s-]/', '', $data['contact_number'] ?? '');
+        $service_id = $data['service_id'] ?? 'whole-body';
+        $oil = ($data['oil_option'] ?? '') === 'Dry' ? 'Dry' : 'With Oil';
+        $therapist_id = (int)($data['therapist_id'] ?? 1);
+        $date = trim($data['booking_date'] ?? '');
+        $start_time = trim($data['start_time'] ?? '');
+        $status = $data['status'] ?? 'Pending';
+        $notes = trim($data['notes'] ?? '');
+
+        if (strlen($name) < 2) {
+            http_response_code(400);
+            echo json_encode(['success' => false, 'error' => 'Valid customer name is required.']);
+            exit;
+        }
+
+        // Fetch service duration
+        $svc = $pdo->prepare("SELECT name, duration_minutes FROM services WHERE id = ?");
+        $svc->execute([$service_id]);
+        $sRow = $svc->fetch();
+        $service_name = $sRow ? $sRow['name'] : 'Whole Body Massage';
+        $duration = $sRow ? (int)$sRow['duration_minutes'] : 60;
+
+        list($sh, $sm) = explode(':', $start_time);
+        $endMins = ((int)$sh * 60) + (int)$sm + $duration;
+        $endTime = sprintf('%02d:%02d', floor($endMins / 60), $endMins % 60);
+
+        // Conflict check
+        $cStmt = $pdo->prepare("
+            SELECT id FROM bookings
+            WHERE therapist_id = ?
+              AND booking_date = ?
+              AND id != ?
+              AND status != 'Cancelled'
+              AND NOT (? >= end_time OR ? <= start_time)
+        ");
+        $cStmt->execute([$therapist_id, $date, $booking_id, $start_time, $endTime]);
+        if ($cStmt->fetch()) {
+            http_response_code(409);
+            echo json_encode(['success' => false, 'error' => 'Therapist is already booked for this slot.']);
+            exit;
+        }
+
+        $upd = $pdo->prepare("
+            UPDATE bookings
+            SET customer_name = ?, contact_number = ?, service_id = ?, service_name = ?,
+                oil_option = ?, therapist_id = ?, booking_date = ?, start_time = ?,
+                end_time = ?, duration_minutes = ?, status = ?, notes = ?, updated_at = NOW()
+            WHERE id = ?
+        ");
+        $upd->execute([
+            $name, $contact, $service_id, $service_name, $oil, $therapist_id,
+            $date, $start_time, $endTime, $duration, $status, $notes, $booking_id
+        ]);
+
+        log_activity(
+            $_SESSION['staff_user']['username'],
+            'STAFF_EDIT_BOOKING',
+            "Edited booking #{$booking_id} details for {$name}"
+        );
+
+        echo json_encode(['success' => true, 'message' => "Booking details updated successfully."]);
+        exit;
+    }
+
+    // 3. STATUS UPDATE ACTION
     $new_status = $data['status'] ?? '';
     $valid_statuses = ['Pending', 'Confirmed', 'Completed', 'Cancelled'];
 
