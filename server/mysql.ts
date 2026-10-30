@@ -1,8 +1,5 @@
 import mysql, { Pool as MysqlPool } from 'mysql2/promise';
-import pg from 'pg';
 import { db } from './db.ts';
-
-const { Pool: PgPool } = pg;
 
 interface DatabaseConfig {
   driver: 'mysql' | 'postgres' | 'sqlite';
@@ -16,7 +13,7 @@ interface DatabaseConfig {
 }
 
 let mysqlPool: MysqlPool | null = null;
-let pgPool: pg.Pool | null = null;
+let pgPool: any = null;
 let activeDriver: 'mysql' | 'postgres' | 'sqlite' = 'sqlite';
 let isConnected = false;
 let lastError: string | null = null;
@@ -94,7 +91,13 @@ export async function initMysql(): Promise<boolean> {
   if (config.driver === 'postgres' && config.url) {
     try {
       console.log('[DB] Connecting to PostgreSQL database (e.g. Render PostgreSQL)...');
-      // Render internal database URLs typically don't require external SSL, but external/pooled ones do
+      let pgModule: any;
+      try {
+        pgModule = await import('pg');
+      } catch (importErr) {
+        throw new Error('Package "pg" not found. If using PostgreSQL on Render, add "pg" to package.json, or configure TiDB/MySQL instead.');
+      }
+      const PgPool = pgModule.default?.Pool || pgModule.Pool;
       const needsSsl = config.url.includes('render.com') || config.url.includes('neon.tech') || config.url.includes('supabase') || config.url.includes('sslmode=require');
       pgPool = new PgPool({
         connectionString: config.url,
