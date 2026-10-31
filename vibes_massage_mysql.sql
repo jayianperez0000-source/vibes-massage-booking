@@ -144,9 +144,3 @@ INSERT INTO `staff` (`id`, `username`, `password_hash`, `full_name`, `role`, `ac
 (2, 'gelyn_perez', 'fa038d81cb45ef66432709dbca01a248:f86c121e7ce71eb8a2e1d034293f03b5f7e6f8510bf24510ee82df2149e612cb', 'Ms. Gelyn Perez (Branch Manager)', 'staff', 1, NOW())
 ON DUPLICATE KEY UPDATE `username`=VALUES(`username`);
 
--- Sample Initial Bookings
-INSERT INTO `bookings` (`reference_no`, `customer_name`, `contact_number`, `service_id`, `service_name`, `oil_option`, `therapist_id`, `booking_date`, `start_time`, `end_time`, `duration_minutes`, `status`, `created_at`, `updated_at`, `notes`) VALUES
-('VM-20261026-001', 'Juan Dela Cruz', '09171234567', 'whole-body', 'Whole Body Massage', 'With Oil', 1, CURDATE(), '11:00', '12:00', 60, 'Confirmed', NOW(), NOW(), 'Prefers medium pressure on lower back'),
-('VM-20261026-002', 'Maria Clara Reyes', '09289876543', 'body-parts', 'Body Parts Massage', 'Dry', 2, CURDATE(), '13:30', '14:00', 30, 'Pending', NOW(), NOW(), 'Focus on neck and shoulders'),
-('VM-20261026-003', 'Anthony Tan', '09395551234', 'whole-body', 'Whole Body Massage', 'With Oil', 3, CURDATE(), '15:00', '16:00', 60, 'Completed', NOW(), NOW(), 'Regular client')
-ON DUPLICATE KEY UPDATE `reference_no`=VALUES(`reference_no`);
