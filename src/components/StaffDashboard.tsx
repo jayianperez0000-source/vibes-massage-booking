@@ -27,6 +27,7 @@ import {
   Key,
   UserCheck,
   UserX,
+  EyeOff,
 } from 'lucide-react';
 import type { Booking, StaffUser, StaffAccount, ActivityLog, Therapist } from '../types.ts';
 
@@ -61,6 +62,7 @@ export const StaffDashboard: React.FC = () => {
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginAttemptsLeft, setLoginAttemptsLeft] = useState<number | null>(null);
   const [loginLocked, setLoginLocked] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Bookings & Filter State
   const [bookings, setBookings] = useState<Booking[]>([]);
@@ -734,18 +736,37 @@ export const StaffDashboard: React.FC = () => {
             </div>
 
             <div>
-              <label htmlFor="staffPassword" className="block text-xs font-bold uppercase tracking-wider text-stone-700 mb-1.5">
-                Password
-              </label>
-              <input
-                id="staffPassword"
-                type="password"
-                placeholder="••••••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={loginLocked || loginLoading}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3.5 py-2.5 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
-              />
+              <div className="flex items-center justify-between mb-1.5">
+                <label htmlFor="staffPassword" className="block text-xs font-bold uppercase tracking-wider text-stone-700">
+                  Password
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  className="text-xs text-stone-500 hover:text-emerald-700 flex items-center gap-1 font-medium transition-colors"
+                >
+                  {showLoginPassword ? (
+                    <>
+                      <EyeOff className="w-3.5 h-3.5" /> Hide
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-3.5 h-3.5" /> Show
+                    </>
+                  )}
+                </button>
+              </div>
+              <div className="relative">
+                <input
+                  id="staffPassword"
+                  type={showLoginPassword ? 'text' : 'password'}
+                  placeholder="••••••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={loginLocked || loginLoading}
+                  className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3.5 py-2.5 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
+                />
+              </div>
             </div>
 
             <button
