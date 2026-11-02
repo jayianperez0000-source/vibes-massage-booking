@@ -428,6 +428,59 @@ export async function syncFromRemote(): Promise<{ success: boolean; count: numbe
       }
     }
 
+    // 3. Synchronize Staff Accounts between remote database and local engine
+    try {
+      let remoteStaff: any[] = [];
+      if (activeDriver === 'postgres' && pgPool) {
+        const res = await pgPool.query('SELECT * FROM staff ORDER BY id ASC');
+        remoteStaff = res.rows;
+      } else if (activeDriver === 'mysql' && mysqlPool) {
+        const [staffRows] = await mysqlPool.query('SELECT * FROM staff ORDER BY id ASC');
+        remoteStaff = staffRows as any[];
+      }
+
+      const upsertStaff = db.prepare(`
+        INSERT INTO staff (id, username, password_hash, full_name, role, active, created_at, last_login)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(username) DO UPDATE SET
+          password_hash = excluded.password_hash,
+          full_name = excluded.full_name,
+          role = excluded.role,
+          active = excluded.active,
+          last_login = excluded.last_login
+      `);
+
+      for (const s of remoteStaff) {
+        upsertStaff.run(
+          s.id,
+          s.username,
+          s.password_hash,
+          s.full_name,
+          s.role || 'staff',
+          s.active ?? 1,
+          s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
+          s.last_login ? new Date(s.last_login).toISOString() : null
+        );
+      }
+
+      // Push any local staff not yet on remote
+      const remoteStaffUsernames = new Set(remoteStaff.map((s: any) => s.username));
+      const localStaff = db.prepare('SELECT * FROM staff').all() as any[];
+      for (const ls of localStaff) {
+        if (!remoteStaffUsernames.has(ls.username)) {
+          await saveStaffToMysql({
+            username: ls.username,
+            password_hash: ls.password_hash,
+            full_name: ls.full_name,
+            role: ls.role,
+            active: ls.active,
+          });
+        }
+      }
+    } catch (staffSyncErr) {
+      console.warn('[DB] Non-critical notice synchronizing staff accounts:', staffSyncErr);
+    }
+
     lastSyncTime = new Date().toISOString();
     isConnected = true;
     lastError = null;
@@ -647,6 +700,72 @@ export async function deleteBookingFromMysql(reference_no: string) {
       await mysqlPool.query('DELETE FROM bookings WHERE reference_no = ?', [reference_no]);
     } catch (err: any) {
       console.error('[MySQL] Delete booking error:', err.message);
+    }
+  }
+}
+
+/**
+ * Real-time save / update staff account in external database (MySQL/PostgreSQL)
+ */
+export async function saveStaffToMysql(staff: {
+  username: string;
+  password_hash: string;
+  full_name: string;
+  role: string;
+  active?: number;
+}) {
+  if (activeDriver === 'postgres' && pgPool) {
+    try {
+      await pgPool.query(
+        `INSERT INTO staff (username, password_hash, full_name, role, active, created_at)
+         VALUES ($1, $2, $3, $4, $5, NOW())
+         ON CONFLICT (username) DO UPDATE SET
+           password_hash = EXCLUDED.password_hash,
+           full_name = EXCLUDED.full_name,
+           role = EXCLUDED.role,
+           active = EXCLUDED.active`,
+        [staff.username, staff.password_hash, staff.full_name, staff.role || 'staff', staff.active ?? 1]
+      );
+      console.log(`[PostgreSQL] Saved staff account ${staff.username} (${staff.role}).`);
+    } catch (err: any) {
+      console.error('[PostgreSQL] Save staff error:', err.message);
+    }
+  } else if (activeDriver === 'mysql' && mysqlPool) {
+    try {
+      await mysqlPool.query(
+        `INSERT INTO staff (username, password_hash, full_name, role, active, created_at)
+         VALUES (?, ?, ?, ?, ?, NOW())
+         ON DUPLICATE KEY UPDATE
+           password_hash = VALUES(password_hash),
+           full_name = VALUES(full_name),
+           role = VALUES(role),
+           active = VALUES(active)`,
+        [staff.username, staff.password_hash, staff.full_name, staff.role || 'staff', staff.active ?? 1]
+      );
+      console.log(`[MySQL] Saved staff account ${staff.username} (${staff.role}).`);
+    } catch (err: any) {
+      console.error('[MySQL] Save staff error:', err.message);
+    }
+  }
+}
+
+/**
+ * Real-time delete staff account in external database
+ */
+export async function deleteStaffFromMysql(username: string) {
+  if (activeDriver === 'postgres' && pgPool) {
+    try {
+      await pgPool.query('DELETE FROM staff WHERE username = $1', [username]);
+      console.log(`[PostgreSQL] Deleted staff account ${username}.`);
+    } catch (err: any) {
+      console.error('[PostgreSQL] Delete staff error:', err.message);
+    }
+  } else if (activeDriver === 'mysql' && mysqlPool) {
+    try {
+      await mysqlPool.query('DELETE FROM staff WHERE username = ?', [username]);
+      console.log(`[MySQL] Deleted staff account ${username}.`);
+    } catch (err: any) {
+      console.error('[MySQL] Delete staff error:', err.message);
     }
   }
 }
