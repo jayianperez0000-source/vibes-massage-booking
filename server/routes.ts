@@ -6,6 +6,8 @@ import {
   saveBookingToMysql,
   updateBookingInMysql,
   deleteBookingFromMysql,
+  saveStaffToMysql,
+  deleteStaffFromMysql,
   getDatabaseStatus,
   syncFromMysql,
 } from './mysql.ts';
@@ -774,6 +776,218 @@ apiRouter.get('/auth/session', (req: Request, res: Response) => {
     },
     remainingMs,
   });
+});
+
+// ==========================================
+// 8.1 Staff & Admin Account Management
+// ==========================================
+apiRouter.get('/staff/accounts', requireStaffAuth, (req: Request, res: Response) => {
+  try {
+    const staff = db.prepare(`
+      SELECT id, username, full_name, role, active, created_at, last_login 
+      FROM staff 
+      ORDER BY id ASC
+    `).all();
+    res.json({ success: true, accounts: staff });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to retrieve staff accounts.' });
+  }
+});
+
+apiRouter.post('/staff/accounts', requireStaffAuth, (req: Request, res: Response) => {
+  const currentStaff = (req as any).staffUser;
+  const ip = getClientIp(req);
+
+  // Only admins can create accounts
+  if (currentStaff.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Only administrators can create staff accounts.' });
+  }
+
+  const { username, password, full_name, role } = req.body;
+
+  if (!username || typeof username !== 'string' || username.trim().length < 3) {
+    return res.status(400).json({ success: false, error: 'Username must be at least 3 characters.' });
+  }
+
+  const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_.]/g, '');
+  if (cleanUsername.length < 3) {
+    return res.status(400).json({ success: false, error: 'Username can only contain letters, numbers, underscores, and dots.' });
+  }
+
+  if (!password || typeof password !== 'string' || password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters long.' });
+  }
+
+  if (!full_name || typeof full_name !== 'string' || full_name.trim().length < 2) {
+    return res.status(400).json({ success: false, error: 'Full name is required.' });
+  }
+
+  const cleanRole = role === 'admin' ? 'admin' : 'staff';
+
+  const existing = db.prepare('SELECT id FROM staff WHERE username = ?').get(cleanUsername);
+  if (existing) {
+    return res.status(409).json({ success: false, error: `Username "${cleanUsername}" is already taken.` });
+  }
+
+  const passwordHash = hashPassword(password);
+  const nowIso = new Date().toISOString();
+
+  const info = db.prepare(`
+    INSERT INTO staff (username, password_hash, full_name, role, active, created_at)
+    VALUES (?, ?, ?, ?, 1, ?)
+  `).run(cleanUsername, passwordHash, full_name.trim(), cleanRole, nowIso);
+
+  const newId = Number(info.lastInsertRowid);
+
+  // Sync to MySQL / TiDB
+  saveStaffToMysql({
+    username: cleanUsername,
+    password_hash: passwordHash,
+    full_name: full_name.trim(),
+    role: cleanRole,
+    active: 1,
+  }).catch((e) => console.error('[MySQL] async save staff error:', e));
+
+  logActivity(
+    currentStaff.username,
+    'CREATE_STAFF_ACCOUNT',
+    `Created new ${cleanRole} account "${cleanUsername}" for ${full_name.trim()}`,
+    ip
+  );
+
+  res.json({
+    success: true,
+    message: `Account "${cleanUsername}" created successfully!`,
+    account: {
+      id: newId,
+      username: cleanUsername,
+      full_name: full_name.trim(),
+      role: cleanRole,
+      active: 1,
+      created_at: nowIso,
+      last_login: null,
+    },
+  });
+});
+
+apiRouter.patch('/staff/accounts/:id/toggle', requireStaffAuth, (req: Request, res: Response) => {
+  const currentStaff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const targetId = Number(req.params.id);
+
+  if (currentStaff.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Only administrators can update account status.' });
+  }
+
+  const target = db.prepare('SELECT * FROM staff WHERE id = ?').get(targetId) as any;
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Account not found.' });
+  }
+
+  if (target.id === currentStaff.id) {
+    return res.status(400).json({ success: false, error: 'You cannot deactivate your own account.' });
+  }
+
+  const newActive = target.active === 1 ? 0 : 1;
+
+  db.prepare('UPDATE staff SET active = ? WHERE id = ?').run(newActive, targetId);
+
+  saveStaffToMysql({
+    username: target.username,
+    password_hash: target.password_hash,
+    full_name: target.full_name,
+    role: target.role,
+    active: newActive,
+  }).catch((e) => console.error('[MySQL] async toggle staff error:', e));
+
+  logActivity(
+    currentStaff.username,
+    'TOGGLE_STAFF_STATUS',
+    `${newActive === 1 ? 'Activated' : 'Deactivated'} account "${target.username}"`,
+    ip
+  );
+
+  res.json({
+    success: true,
+    message: `Account "${target.username}" is now ${newActive === 1 ? 'active' : 'inactive'}.`,
+    active: newActive,
+  });
+});
+
+apiRouter.patch('/staff/accounts/:id/password', requireStaffAuth, (req: Request, res: Response) => {
+  const currentStaff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const targetId = Number(req.params.id);
+  const { new_password } = req.body;
+
+  if (currentStaff.role !== 'admin' && currentStaff.id !== targetId) {
+    return res.status(403).json({ success: false, error: 'Permission denied.' });
+  }
+
+  if (!new_password || typeof new_password !== 'string' || new_password.length < 6) {
+    return res.status(400).json({ success: false, error: 'Password must be at least 6 characters.' });
+  }
+
+  const target = db.prepare('SELECT * FROM staff WHERE id = ?').get(targetId) as any;
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Account not found.' });
+  }
+
+  const newHash = hashPassword(new_password);
+  db.prepare('UPDATE staff SET password_hash = ? WHERE id = ?').run(newHash, targetId);
+
+  saveStaffToMysql({
+    username: target.username,
+    password_hash: newHash,
+    full_name: target.full_name,
+    role: target.role,
+    active: target.active,
+  }).catch((e) => console.error('[MySQL] async update staff pass error:', e));
+
+  logActivity(
+    currentStaff.username,
+    'RESET_STAFF_PASSWORD',
+    `Updated password for account "${target.username}"`,
+    ip
+  );
+
+  res.json({ success: true, message: `Password for "${target.username}" updated successfully!` });
+});
+
+apiRouter.delete('/staff/accounts/:id', requireStaffAuth, (req: Request, res: Response) => {
+  const currentStaff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const targetId = Number(req.params.id);
+
+  if (currentStaff.role !== 'admin') {
+    return res.status(403).json({ success: false, error: 'Only administrators can delete accounts.' });
+  }
+
+  const target = db.prepare('SELECT * FROM staff WHERE id = ?').get(targetId) as any;
+  if (!target) {
+    return res.status(404).json({ success: false, error: 'Account not found.' });
+  }
+
+  if (target.id === currentStaff.id) {
+    return res.status(400).json({ success: false, error: 'You cannot delete your own logged-in account.' });
+  }
+
+  if (target.username === 'admin') {
+    return res.status(400).json({ success: false, error: 'The primary system admin account cannot be deleted.' });
+  }
+
+  db.prepare('DELETE FROM staff WHERE id = ?').run(targetId);
+
+  deleteStaffFromMysql(target.username).catch((e) => console.error('[MySQL] async delete staff error:', e));
+
+  logActivity(
+    currentStaff.username,
+    'DELETE_STAFF_ACCOUNT',
+    `Deleted account "${target.username}" (${target.full_name})`,
+    ip
+  );
+
+  res.json({ success: true, message: `Account "${target.username}" has been deleted.` });
 });
 
 // ==========================================
