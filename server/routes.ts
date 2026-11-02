@@ -1097,6 +1097,93 @@ apiRouter.get('/staff/export-xml', requireStaffAuth, (req: Request, res: Respons
   }
 });
 
+// ==========================================
+// 10.1 Excel Export for Staff (.csv with UTF-8 BOM)
+// ==========================================
+apiRouter.get('/staff/export-excel', requireStaffAuth, (req: Request, res: Response) => {
+  const staff = (req as any).staffUser;
+  const ip = getClientIp(req);
+  const startDate = (req.query.start_date as string) || '2026-01-01';
+  const endDate = (req.query.end_date as string) || '2026-12-31';
+
+  try {
+    const bookings = db.prepare(`
+      SELECT 
+        b.*,
+        t.name as therapist_name,
+        s.name as service_title,
+        s.price_php as service_price
+      FROM bookings b
+      LEFT JOIN therapists t ON b.therapist_id = t.id
+      LEFT JOIN services s ON b.service_id = s.id
+      WHERE b.booking_date >= ? AND b.booking_date <= ?
+      ORDER BY b.booking_date ASC, b.start_time ASC
+    `).all(startDate, endDate) as any[];
+
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      'Reference No',
+      'Customer Name',
+      'Contact Number',
+      'Service',
+      'Oil Option',
+      'Duration (Mins)',
+      'Price (PHP)',
+      'Therapist',
+      'Booking Date',
+      'Start Time',
+      'End Time',
+      'Status',
+      'Notes',
+      'Cancellation Reason',
+      'Created At',
+      'Updated At',
+    ];
+
+    const rows = bookings.map((b: any) => [
+      escapeCsv(b.reference_no),
+      escapeCsv(b.customer_name),
+      escapeCsv(b.contact_number),
+      escapeCsv(b.service_title || b.service_name),
+      escapeCsv(b.oil_option),
+      escapeCsv(b.duration_minutes),
+      escapeCsv(b.service_price ? Number(b.service_price).toFixed(2) : (b.duration_minutes === 60 ? '350.00' : '200.00')),
+      escapeCsv(b.therapist_name || 'Assigned on arrival'),
+      escapeCsv(b.booking_date),
+      escapeCsv(b.start_time),
+      escapeCsv(b.end_time),
+      escapeCsv(b.status),
+      escapeCsv(b.notes || ''),
+      escapeCsv(b.cancellation_reason || ''),
+      escapeCsv(b.created_at),
+      escapeCsv(b.updated_at),
+    ]);
+
+    // Prepend UTF-8 BOM (\uFEFF) so Excel on Windows & Mac properly detects encoding & separators
+    const csvContent = '\uFEFF' + [headers.map(h => `"${h}"`).join(','), ...rows.map(r => r.join(','))].join('\r\n');
+
+    logActivity(
+      staff.username,
+      'EXPORT_BOOKINGS_EXCEL',
+      `Exported ${bookings.length} booking records to Excel/CSV for date range ${startDate} to ${endDate}`,
+      ip
+    );
+
+    const filename = `vibes-massage-appointments-${startDate}-to-${endDate}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csvContent);
+  } catch (err: any) {
+    console.error('Excel export error:', err);
+    res.status(500).json({ success: false, error: 'Failed to generate Excel export.' });
+  }
+});
+
 // Secure XML Testing / XXE Verification Route
 apiRouter.post('/staff/test-xml-inspection', requireStaffAuth, (req: Request, res: Response) => {
   const { xmlContent } = req.body;
