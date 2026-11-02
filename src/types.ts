@@ -55,6 +55,16 @@ export interface StaffUser {
   role: string;
 }
 
+export interface StaffAccount {
+  id: number;
+  username: string;
+  full_name: string;
+  role: 'admin' | 'staff';
+  active: number;
+  created_at: string;
+  last_login?: string | null;
+}
+
 export interface ActivityLog {
   id: number;
   timestamp: string;
