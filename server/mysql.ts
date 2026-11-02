@@ -1,5 +1,7 @@
-import mysql, { Pool as MysqlPool } from 'mysql2/promise';
+import mysql from 'mysql2/promise';
 import { db } from './db.ts';
+
+type MysqlPool = mysql.Pool;
 
 interface DatabaseConfig {
   driver: 'mysql' | 'postgres' | 'sqlite';
