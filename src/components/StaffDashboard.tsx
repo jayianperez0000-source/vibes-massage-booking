@@ -22,6 +22,7 @@ import {
   Pencil,
   Trash2,
   Database,
+  FileSpreadsheet,
 } from 'lucide-react';
 import type { Booking, StaffUser, ActivityLog, Therapist } from '../types.ts';
 
@@ -385,6 +386,69 @@ export const StaffDashboard: React.FC = () => {
     window.location.href = url;
   };
 
+  const handleDownloadExcel = () => {
+    const url = `/api/staff/export-excel?start_date=${exportStartDate}&end_date=${exportEndDate}`;
+    window.location.href = url;
+  };
+
+  const handleExportCurrentTableToExcel = () => {
+    if (bookings.length === 0) {
+      alert('No appointment records available to export.');
+      return;
+    }
+    const escapeCsv = (val: any) => {
+      if (val === null || val === undefined) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    const headers = [
+      'Reference No',
+      'Customer Name',
+      'Contact Number',
+      'Service',
+      'Oil Option',
+      'Duration (Mins)',
+      'Price (PHP)',
+      'Therapist',
+      'Booking Date',
+      'Start Time',
+      'End Time',
+      'Status',
+      'Notes',
+      'Created At',
+    ];
+
+    const rows = bookings.map((b) => [
+      escapeCsv(b.reference_no),
+      escapeCsv(b.customer_name),
+      escapeCsv(b.contact_number),
+      escapeCsv(b.service_name),
+      escapeCsv(b.oil_option),
+      escapeCsv(b.duration_minutes),
+      escapeCsv(b.duration_minutes === 60 ? '350.00' : '200.00'),
+      escapeCsv(therapists.find((t) => t.id === b.therapist_id)?.name || 'Assigned on arrival'),
+      escapeCsv(b.booking_date),
+      escapeCsv(b.start_time),
+      escapeCsv(b.end_time),
+      escapeCsv(b.status),
+      escapeCsv(b.notes || ''),
+      escapeCsv(b.created_at),
+    ]);
+
+    const csvContent = '\uFEFF' + [headers.map((h) => `"${h}"`).join(','), ...rows.map((r) => r.join(','))].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const todayStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('href', url);
+    link.setAttribute('download', `vibes-appointments-${todayStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const handlePreviewXml = async () => {
     setExportLoading(true);
     try {
@@ -620,11 +684,20 @@ export const StaffDashboard: React.FC = () => {
           </div>
 
           <button
-            onClick={() => setShowExportModal(true)}
-            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+            onClick={handleExportCurrentTableToExcel}
+            className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+            title="Download current appointments list as Excel spreadsheet (.csv)"
           >
-            <FileCode className="w-3.5 h-3.5" />
-            Export XML
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-200" />
+            Export to Excel
+          </button>
+
+          <button
+            onClick={() => setShowExportModal(true)}
+            className="px-3.5 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 border border-stone-700 cursor-pointer"
+          >
+            <FileCode className="w-3.5 h-3.5 text-stone-300" />
+            Date Range Export
           </button>
 
           <button
@@ -843,18 +916,29 @@ export const StaffDashboard: React.FC = () => {
 
       {/* Bookings Table matching Appendix B wireframe */}
       <div className="bg-white rounded-3xl border border-stone-200/90 shadow-lg overflow-hidden">
-        <div className="p-4 sm:p-5 border-b border-stone-100 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-stone-100 flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-serif font-bold text-stone-900 text-lg">
             Appointment Records ({bookings.length})
           </h2>
-          <button
-            onClick={loadBookings}
-            disabled={loadingBookings}
-            className="p-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs flex items-center gap-1"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loadingBookings ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportCurrentTableToExcel}
+              disabled={bookings.length === 0}
+              className="px-3 py-1.5 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+              title="Save displayed records directly to Excel spreadsheet (.csv)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+              Save to Excel
+            </button>
+            <button
+              onClick={loadBookings}
+              disabled={loadingBookings}
+              className="p-1.5 px-2.5 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-600 text-xs font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingBookings ? 'animate-spin' : ''}`} />
+              Refresh
+            </button>
+          </div>
         </div>
 
         {loadingBookings ? (
@@ -998,12 +1082,12 @@ export const StaffDashboard: React.FC = () => {
             <div className="flex items-center justify-between pb-4 border-b border-stone-100 mb-4">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-emerald-100 text-emerald-800 rounded-xl">
-                  <FileCode className="w-5 h-5" />
+                  <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-stone-900 text-base">Export Bookings Data (XML)</h3>
+                  <h3 className="font-bold text-stone-900 text-base">Export Bookings Data (Excel & XML)</h3>
                   <p className="text-xs text-stone-500">
-                    Staff-only reporting & audit data formatted per client specification
+                    Export appointments for accounting, staff payroll, and management reporting
                   </p>
                 </div>
               </div>
@@ -1051,20 +1135,29 @@ export const StaffDashboard: React.FC = () => {
               <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 text-xs text-emerald-900 space-y-1">
                 <div className="flex items-center gap-1.5 font-bold">
                   <ShieldCheck className="w-4 h-4 text-emerald-700" />
-                  Security Specification: Safe XML Generation & XXE Disabling
+                  Security Specification: Safe Excel/CSV & XML Generation
                 </div>
                 <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Only authenticated staff can generate this export. All fields are escaped against XML injection. External entity parsing is explicitly forbidden to defend against XML External Entity (XXE) vulnerabilities.
+                  Only authenticated branch staff can generate exports. Excel exports are formatted with UTF-8 BOM for immediate opening in Microsoft Excel. XML exports enforce disabled external entities against XXE.
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={handleDownloadXml}
-                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                  onClick={handleDownloadExcel}
+                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
-                  <Download className="w-3.5 h-3.5" />
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-200" />
+                  Download Excel (.csv)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadXml}
+                  className="px-4 py-2.5 bg-stone-800 hover:bg-stone-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5 text-stone-300" />
                   Download XML File (.xml)
                 </button>
 
