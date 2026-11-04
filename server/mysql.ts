@@ -1,5 +1,6 @@
 import mysql from 'mysql2/promise';
 import { db } from './db.ts';
+import { hashPassword } from './security.ts';
 
 type MysqlPool = mysql.Pool;
 
@@ -236,6 +237,20 @@ async function ensurePostgresTables() {
         ip_address VARCHAR(50) NOT NULL
       );
     `);
+
+    // Ensure initial staff accounts exist in PostgreSQL
+    const staffRes = await pgPool.query('SELECT COUNT(*) as count FROM staff');
+    if (Number(staffRes.rows[0]?.count || 0) === 0) {
+      const now = new Date().toISOString();
+      await pgPool.query(`
+        INSERT INTO staff (username, password_hash, full_name, role, active, created_at)
+        VALUES 
+          ('admin', $1, 'System Administrator', 'admin', 1, $3),
+          ('gelyn_perez', $2, 'Ms. Gelyn Perez (Branch Manager)', 'staff', 1, $3)
+      `, [hashPassword('Admin123!'), hashPassword('Vibes2026!'), now]);
+      console.log('[PostgreSQL] Seeded initial staff accounts.');
+    }
+
     console.log('[DB] PostgreSQL tables verified.');
   } catch (err: any) {
     console.error('[DB] PostgreSQL schema error:', err.message);
@@ -320,6 +335,20 @@ async function ensureMysqlTables() {
         PRIMARY KEY (id)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
     `);
+
+    // Ensure initial staff accounts exist in MySQL
+    const [staffCountRows] = await mysqlPool.query('SELECT COUNT(*) as count FROM staff');
+    const staffCount = Number((staffCountRows as any[])[0]?.count || 0);
+    if (staffCount === 0) {
+      const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
+      await mysqlPool.query(`
+        INSERT INTO staff (username, password_hash, full_name, role, active, created_at)
+        VALUES 
+          ('admin', ?, 'System Administrator', 'admin', 1, ?),
+          ('gelyn_perez', ?, 'Ms. Gelyn Perez (Branch Manager)', 'staff', 1, ?)
+      `, [hashPassword('Admin123!'), now, hashPassword('Vibes2026!'), now]);
+      console.log('[MySQL] Seeded initial staff accounts.');
+    }
   } catch (err: any) {
     console.error('[DB] MySQL schema error:', err.message);
   }
@@ -441,6 +470,11 @@ export async function syncFromRemote(): Promise<{ success: boolean; count: numbe
         remoteStaff = staffRows as any[];
       }
 
+      const knownBogusHashes = new Set([
+        'e4a896dfa5e98585e50529944a958b4b:9fb4578bce00e4e7e6008ab9e3e3b3e213bbf7976e33e9d8cb94bce43029cf05',
+        'fa038d81cb45ef66432709dbca01a248:f86c121e7ce71eb8a2e1d034293f03b5f7e6f8510bf24510ee82df2149e612cb',
+      ]);
+
       const upsertStaff = db.prepare(`
         INSERT INTO staff (id, username, password_hash, full_name, role, active, created_at, last_login)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -453,10 +487,24 @@ export async function syncFromRemote(): Promise<{ success: boolean; count: numbe
       `);
 
       for (const s of remoteStaff) {
+        let cleanHash = s.password_hash;
+        if (knownBogusHashes.has(cleanHash) || !cleanHash || cleanHash.length < 20) {
+          if (s.username === 'admin') cleanHash = hashPassword('Admin123!');
+          else if (s.username === 'gelyn_perez') cleanHash = hashPassword('Vibes2026!');
+          // Auto-heal remote database
+          saveStaffToMysql({
+            username: s.username,
+            password_hash: cleanHash,
+            full_name: s.full_name,
+            role: s.role,
+            active: s.active,
+          }).catch(() => {});
+        }
+
         upsertStaff.run(
           s.id,
           s.username,
-          s.password_hash,
+          cleanHash,
           s.full_name,
           s.role || 'staff',
           s.active ?? 1,
