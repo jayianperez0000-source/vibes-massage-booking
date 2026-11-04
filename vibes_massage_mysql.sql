@@ -140,7 +140,7 @@ ON DUPLICATE KEY UPDATE `name`=VALUES(`name`);
 -- admin -> Admin123!
 -- gelyn_perez -> Vibes2026!
 INSERT INTO `staff` (`id`, `username`, `password_hash`, `full_name`, `role`, `active`, `created_at`) VALUES
-(1, 'admin', 'e4a896dfa5e98585e50529944a958b4b:9fb4578bce00e4e7e6008ab9e3e3b3e213bbf7976e33e9d8cb94bce43029cf05', 'System Administrator', 'admin', 1, NOW()),
-(2, 'gelyn_perez', 'fa038d81cb45ef66432709dbca01a248:f86c121e7ce71eb8a2e1d034293f03b5f7e6f8510bf24510ee82df2149e612cb', 'Ms. Gelyn Perez (Branch Manager)', 'staff', 1, NOW())
-ON DUPLICATE KEY UPDATE `username`=VALUES(`username`);
+(1, 'admin', 'd80e432067d728bb551cff3bdb29534d:54647e6772d3b866c1d80f15642ed98cc062a76c634bf99d3216883784967ec727e925de390160fe784e2a3a2bee14636c36ee488ac538dff43fb02fdc2e7f3b', 'System Administrator', 'admin', 1, NOW()),
+(2, 'gelyn_perez', 'ca55cfd51bc91e860fbb6115e2ff4c63:ecaf387a40ff0d2653e7c99a205b8a9cdcdd963470bd1c14ccc896657dff2349a747f56b78c592e3514cee70f42632cc2b15377392ac422a3045764c64c8a903', 'Ms. Gelyn Perez (Branch Manager)', 'staff', 1, NOW())
+ON DUPLICATE KEY UPDATE `username`=VALUES(`username`), `password_hash`=VALUES(`password_hash`);
 
