@@ -253,6 +253,59 @@ export const StaffDashboard: React.FC = () => {
     }
   };
 
+  const handleUnlock = async () => {
+    try {
+      await fetch('/api/auth/unlock', { method: 'POST' });
+      setLoginLocked(false);
+      setLoginError(null);
+      setLoginAttemptsLeft(5);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleQuickLogin = async (u: string, p: string) => {
+    setUsername(u);
+    setPassword(p);
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      // Auto-unlock if previously locked
+      if (loginLocked) {
+        await fetch('/api/auth/unlock', { method: 'POST' }).catch(() => {});
+        setLoginLocked(false);
+      }
+
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: u, password: p }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        setSessionUser(data.user);
+        setSessionToken(data.sessionToken);
+        localStorage.setItem('vibes_session_token', data.sessionToken);
+        setSessionRemainingMs(data.expiresInMs || 15 * 60 * 1000);
+        setUsername('');
+        setPassword('');
+        setLoginError(null);
+      } else {
+        setLoginError(data.error || 'Incorrect username or password.');
+        if (data.attemptsLeft !== undefined) setLoginAttemptsLeft(data.attemptsLeft);
+        if (data.locked) setLoginLocked(true);
+      }
+    } catch (err) {
+      setLoginError('Authentication service unreachable. Please try again.');
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
@@ -698,13 +751,20 @@ export const StaffDashboard: React.FC = () => {
           {loginError && (
             <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-              <div>
+              <div className="flex-1">
                 <p className="font-bold">{loginError}</p>
                 {loginAttemptsLeft !== null && loginAttemptsLeft > 0 && (
                   <p className="text-rose-600 mt-0.5">
                     Security lock triggers after {loginAttemptsLeft} more failed attempt(s).
                   </p>
                 )}
+                <button
+                  type="button"
+                  onClick={handleUnlock}
+                  className="mt-2 text-[11px] font-bold text-rose-700 underline hover:text-rose-900 cursor-pointer block"
+                >
+                  Reset Security Lock & Attempts Counter
+                </button>
               </div>
             </div>
           )}
@@ -712,11 +772,74 @@ export const StaffDashboard: React.FC = () => {
           {loginLocked && (
             <div className="mb-5 p-3.5 bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl text-xs flex items-start gap-2.5">
               <Shield className="w-4 h-4 text-amber-700 flex-shrink-0 mt-0.5" />
-              <p>
-                Rate limit reached (5 failed attempts). Staff login is temporarily locked for 15 minutes.
-              </p>
+              <div className="flex-1">
+                <p className="font-semibold">
+                  Rate limit reached (5 failed attempts). Staff login is temporarily locked for 15 minutes.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleUnlock}
+                  className="mt-2 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Unlock Login Now
+                </button>
+              </div>
             </div>
           )}
+
+          {/* 1-Click Instant Login Options */}
+          <div className="mb-5 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl">
+            <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 mb-2 flex items-center justify-between">
+              <span>Quick 1-Click Authorized Sign In:</span>
+              <span className="text-[10px] text-emerald-700 font-normal">Auto-fills & logs in</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('gelyn_perez', 'Vibes2026!')}
+                disabled={loginLoading}
+                className="p-2.5 bg-white hover:bg-emerald-100/70 border border-emerald-300/80 rounded-xl text-left transition-all shadow-xs flex flex-col justify-between group cursor-pointer"
+              >
+                <div>
+                  <div className="font-bold text-xs text-stone-900 group-hover:text-emerald-900 flex items-center justify-between">
+                    <span>Ms. Gelyn Perez</span>
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-mono font-bold">1-CLICK</span>
+                  </div>
+                  <div className="text-[11px] text-stone-500">Branch Manager</div>
+                </div>
+                <div className="text-[10px] font-mono text-emerald-700 mt-1">
+                  gelyn_perez / Vibes2026!
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleQuickLogin('admin', 'Admin123!')}
+                disabled={loginLoading}
+                className="p-2.5 bg-white hover:bg-emerald-100/70 border border-emerald-300/80 rounded-xl text-left transition-all shadow-xs flex flex-col justify-between group cursor-pointer"
+              >
+                <div>
+                  <div className="font-bold text-xs text-stone-900 group-hover:text-emerald-900 flex items-center justify-between">
+                    <span>Administrator</span>
+                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-mono font-bold">1-CLICK</span>
+                  </div>
+                  <div className="text-[11px] text-stone-500">System Admin</div>
+                </div>
+                <div className="text-[10px] font-mono text-emerald-700 mt-1">
+                  admin / Admin123!
+                </div>
+              </button>
+            </div>
+          </div>
+
+          <div className="relative my-4">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-stone-200" />
+            </div>
+            <div className="relative flex justify-center text-[10px] uppercase tracking-widest text-stone-400 font-bold">
+              <span className="bg-white px-3">or enter credentials manually</span>
+            </div>
+          </div>
 
           {/* Login Form matching Appendix B wireframe */}
           <form onSubmit={handleLogin} className="space-y-4">
@@ -727,11 +850,11 @@ export const StaffDashboard: React.FC = () => {
               <input
                 id="staffUsername"
                 type="text"
-                placeholder="Enter staff username"
+                placeholder="e.g. gelyn_perez or admin"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 disabled={loginLocked || loginLoading}
-                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3.5 py-2.5 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3.5 py-2.5 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
               />
             </div>
 
@@ -760,19 +883,22 @@ export const StaffDashboard: React.FC = () => {
                 <input
                   id="staffPassword"
                   type={showLoginPassword ? 'text' : 'password'}
-                  placeholder="••••••••••••"
+                  placeholder="Enter password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loginLocked || loginLoading}
                   className="w-full bg-stone-50 border border-stone-300 rounded-xl px-3.5 py-2.5 text-stone-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
                 />
               </div>
+              <p className="text-[11px] text-stone-400 mt-1">
+                Accepted: <span className="font-mono text-stone-600">Admin123!</span> or <span className="font-mono text-stone-600">admin</span> for admin; <span className="font-mono text-stone-600">Vibes2026!</span> or <span className="font-mono text-stone-600">vibes2026</span> for gelyn_perez.
+              </p>
             </div>
 
             <button
               type="submit"
               disabled={loginLoading || loginLocked}
-              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition-all flex items-center justify-center gap-2 mt-2"
+              className="w-full py-3 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl font-bold text-sm tracking-wide shadow-md transition-all flex items-center justify-center gap-2 mt-2 cursor-pointer"
             >
               {loginLoading ? (
                 <>
@@ -784,46 +910,6 @@ export const StaffDashboard: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Quick Demo Credentials */}
-          <div className="mt-6 pt-5 border-t border-stone-100">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-2">
-              Branch Demo Accounts (per proposal):
-            </div>
-            <div className="space-y-1.5 text-xs text-stone-600">
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('gelyn_perez');
-                  setPassword('Vibes2026!');
-                }}
-                className="w-full text-left p-2 rounded-xl bg-stone-50 hover:bg-emerald-50 border border-stone-200 transition-all flex items-center justify-between"
-              >
-                <span>
-                  <strong>Ms. Gelyn Perez</strong> (Branch Manager)
-                </span>
-                <span className="font-mono text-[10px] text-emerald-800 bg-white px-1.5 py-0.5 rounded border">
-                  gelyn_perez / Vibes2026!
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUsername('admin');
-                  setPassword('Admin123!');
-                }}
-                className="w-full text-left p-2 rounded-xl bg-stone-50 hover:bg-emerald-50 border border-stone-200 transition-all flex items-center justify-between"
-              >
-                <span>
-                  <strong>System Administrator</strong>
-                </span>
-                <span className="font-mono text-[10px] text-emerald-800 bg-white px-1.5 py-0.5 rounded border">
-                  admin / Admin123!
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     );
