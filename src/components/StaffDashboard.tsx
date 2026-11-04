@@ -264,47 +264,6 @@ export const StaffDashboard: React.FC = () => {
     }
   };
 
-  const handleQuickLogin = async (u: string, p: string) => {
-    setUsername(u);
-    setPassword(p);
-    setLoginError(null);
-    setLoginLoading(true);
-
-    try {
-      // Auto-unlock if previously locked
-      if (loginLocked) {
-        await fetch('/api/auth/unlock', { method: 'POST' }).catch(() => {});
-        setLoginLocked(false);
-      }
-
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: u, password: p }),
-      });
-
-      const data = await res.json();
-
-      if (res.ok && data.success) {
-        setSessionUser(data.user);
-        setSessionToken(data.sessionToken);
-        localStorage.setItem('vibes_session_token', data.sessionToken);
-        setSessionRemainingMs(data.expiresInMs || 15 * 60 * 1000);
-        setUsername('');
-        setPassword('');
-        setLoginError(null);
-      } else {
-        setLoginError(data.error || 'Incorrect username or password.');
-        if (data.attemptsLeft !== undefined) setLoginAttemptsLeft(data.attemptsLeft);
-        if (data.locked) setLoginLocked(true);
-      }
-    } catch (err) {
-      setLoginError('Authentication service unreachable. Please try again.');
-    } finally {
-      setLoginLoading(false);
-    }
-  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -786,60 +745,6 @@ export const StaffDashboard: React.FC = () => {
               </div>
             </div>
           )}
-
-          {/* 1-Click Instant Login Options */}
-          <div className="mb-5 p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-2xl">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-900 mb-2 flex items-center justify-between">
-              <span>Quick 1-Click Authorized Sign In:</span>
-              <span className="text-[10px] text-emerald-700 font-normal">Auto-fills & logs in</span>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('gelyn_perez', 'Vibes2026!')}
-                disabled={loginLoading}
-                className="p-2.5 bg-white hover:bg-emerald-100/70 border border-emerald-300/80 rounded-xl text-left transition-all shadow-xs flex flex-col justify-between group cursor-pointer"
-              >
-                <div>
-                  <div className="font-bold text-xs text-stone-900 group-hover:text-emerald-900 flex items-center justify-between">
-                    <span>Ms. Gelyn Perez</span>
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-mono font-bold">1-CLICK</span>
-                  </div>
-                  <div className="text-[11px] text-stone-500">Branch Manager</div>
-                </div>
-                <div className="text-[10px] font-mono text-emerald-700 mt-1">
-                  gelyn_perez / Vibes2026!
-                </div>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleQuickLogin('admin', 'Admin123!')}
-                disabled={loginLoading}
-                className="p-2.5 bg-white hover:bg-emerald-100/70 border border-emerald-300/80 rounded-xl text-left transition-all shadow-xs flex flex-col justify-between group cursor-pointer"
-              >
-                <div>
-                  <div className="font-bold text-xs text-stone-900 group-hover:text-emerald-900 flex items-center justify-between">
-                    <span>Administrator</span>
-                    <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1 py-0.5 rounded font-mono font-bold">1-CLICK</span>
-                  </div>
-                  <div className="text-[11px] text-stone-500">System Admin</div>
-                </div>
-                <div className="text-[10px] font-mono text-emerald-700 mt-1">
-                  admin / Admin123!
-                </div>
-              </button>
-            </div>
-          </div>
-
-          <div className="relative my-4">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-stone-200" />
-            </div>
-            <div className="relative flex justify-center text-[10px] uppercase tracking-widest text-stone-400 font-bold">
-              <span className="bg-white px-3">or enter credentials manually</span>
-            </div>
-          </div>
 
           {/* Login Form matching Appendix B wireframe */}
           <form onSubmit={handleLogin} className="space-y-4">
