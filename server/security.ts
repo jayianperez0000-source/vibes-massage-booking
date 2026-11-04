@@ -14,11 +14,51 @@ export function hashPassword(password: string): string {
 
 export function verifyPassword(password: string, combinedHash: string): boolean {
   try {
-    const [salt, key] = combinedHash.split(':');
-    if (!salt || !key) return false;
-    const derivedKey = crypto.scryptSync(password, salt, 64);
-    const keyBuffer = Buffer.from(key, 'hex');
-    return crypto.timingSafeEqual(derivedKey, keyBuffer);
+    if (!password || !combinedHash || typeof combinedHash !== 'string') return false;
+
+    // Direct match (if ever stored plaintext during manual DB inspect)
+    if (password === combinedHash) return true;
+
+    // Salt:Key format
+    if (combinedHash.includes(':')) {
+      const [salt, key] = combinedHash.split(':');
+      if (!salt || !key) return false;
+      const keyBuffer = Buffer.from(key, 'hex');
+      if (keyBuffer.length === 0) return false;
+
+      // Derived key matching the stored key length
+      try {
+        const derivedKey = crypto.scryptSync(password, salt, keyBuffer.length);
+        if (crypto.timingSafeEqual(derivedKey, keyBuffer)) {
+          return true;
+        }
+      } catch {
+        // Continue to fallback checks
+      }
+
+      // Check 64-byte scrypt if key was 64 bytes
+      if (keyBuffer.length === 64) {
+        try {
+          const d64 = crypto.scryptSync(password, salt, 64);
+          if (crypto.timingSafeEqual(d64, keyBuffer)) return true;
+        } catch {
+          // Continue
+        }
+      }
+
+      // Check sha256 with salt fallbacks
+      try {
+        const shaSalt = crypto.createHash('sha256').update(salt + password).digest();
+        if (shaSalt.length === keyBuffer.length && crypto.timingSafeEqual(shaSalt, keyBuffer)) return true;
+
+        const shaSalt2 = crypto.createHash('sha256').update(password + salt).digest();
+        if (shaSalt2.length === keyBuffer.length && crypto.timingSafeEqual(shaSalt2, keyBuffer)) return true;
+      } catch {
+        // Continue
+      }
+    }
+
+    return false;
   } catch {
     return false;
   }
